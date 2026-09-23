@@ -1,0 +1,1553 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>우리 반 스마트 칠판 전용 도구</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              800: '#1e40af',
+              900: '#1e3a8a',
+            }
+          },
+          fontFamily: {
+            sans: ['Pretendard', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  
+  <!-- FontAwesome Icons CDN -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- QRCode.js CDN (학생 스마트폰 연동 QR 생성용) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  
+  <!-- Canvas Confetti CDN (당첨 축하 폭죽 효과) -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+  <style>
+    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+    
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+    }
+    
+    /* 스마트 칠판 원터치 반응 최적화 */
+    .touch-btn {
+      touch-action: manipulation;
+      transition: transform 0.1s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .touch-btn:active {
+      transform: scale(0.96);
+    }
+    
+    /* 부드러운 스크롤바 */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.05);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(156, 163, 175, 0.5);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(107, 114, 128, 0.8);
+    }
+
+    /* 번호 칩 52px 이상 보장 */
+    .student-chip {
+      min-width: 52px;
+      min-height: 52px;
+    }
+
+    /* 포스트잇 건의함 스타일 */
+    .postit-card {
+      box-shadow: 2px 4px 10px rgba(0,0,0,0.08);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .postit-card:hover {
+      transform: translateY(-2px) rotate(0deg) !important;
+      box-shadow: 4px 8px 16px rgba(0,0,0,0.12);
+    }
+
+    /* 전광판 숫자 롤링 애니메이션 스타일 */
+    .digital-roll {
+      text-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
+    }
+  </style>
+</head>
+<body class="bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col transition-colors duration-200">
+
+  <!-- =================================================================== -->
+  <!-- 1. 학생 참여용 모바일 화면 (?mode=student 접속 시 표시)               -->
+  <!-- =================================================================== -->
+  <div id="studentAppContainer" class="hidden min-h-screen flex-col bg-slate-50 dark:bg-slate-900 p-4 max-w-md mx-auto w-full">
+    <!-- 학생 상단 바 -->
+    <header class="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800 mb-4">
+      <div class="flex items-center gap-2">
+        <span class="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-sm">
+          <i class="fa-solid fa-mobile-screen"></i>
+        </span>
+        <div>
+          <h1 id="studentHeaderTitle" class="font-extrabold text-slate-900 dark:text-white text-base">우리 반 참여 페이지</h1>
+          <p class="text-[11px] text-slate-500 dark:text-slate-400">익명 실시간 투표 & 건의함</p>
+        </div>
+      </div>
+      <span class="px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 text-xs font-bold flex items-center gap-1">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+        연결됨
+      </span>
+    </header>
+
+    <!-- 탭 1: 학생 투표 참여 -->
+    <section class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 mb-4">
+      <div class="flex items-center gap-2 mb-3">
+        <i class="fa-solid fa-check-to-slot text-blue-600 dark:text-blue-400"></i>
+        <h2 class="font-bold text-slate-800 dark:text-slate-100 text-sm">실시간 학급 투표</h2>
+      </div>
+
+      <div id="studentVoteBox" class="space-y-3">
+        <div id="studentVoteQuestion" class="p-3 rounded-xl bg-blue-50 dark:bg-slate-700/60 text-blue-900 dark:text-blue-100 font-bold text-sm">
+          현재 진행 중인 투표 안건을 기다리고 있습니다...
+        </div>
+        <div id="studentVoteOptions" class="grid grid-cols-1 gap-2">
+          <!-- 투표 선택지 버튼 JS 렌더링 -->
+        </div>
+        <div id="studentVoteSubmittedMsg" class="hidden p-3 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 rounded-xl text-center text-xs font-bold text-emerald-700 dark:text-emerald-300">
+          <i class="fa-solid fa-circle-check mr-1"></i> 투표가 안전하게 제출되었습니다!
+        </div>
+      </div>
+    </section>
+
+    <!-- 탭 2: 학생 익명 건의함 -->
+    <section class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 flex-1 flex flex-col">
+      <div class="flex items-center gap-2 mb-2">
+        <i class="fa-solid fa-envelope-open-text text-amber-500"></i>
+        <h2 class="font-bold text-slate-800 dark:text-slate-100 text-sm">익명 건의함 (칠판으로 전송)</h2>
+      </div>
+      <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">
+        이름 없이 전송되며 칠판에 실시간 포스트잇으로 도착합니다. (최대 100자)
+      </p>
+
+      <form onsubmit="submitStudentSuggestion(event)" class="flex flex-col flex-1 gap-3">
+        <textarea id="studentSuggestInput" maxlength="100" rows="4" class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none" placeholder="선생님과 반 친구들에게 전하고 싶은 이야기나 건의사항을 적어주세요."></textarea>
+        
+        <div class="flex items-center justify-between text-xs text-slate-400">
+          <span id="suggestCharCount">0 / 100자</span>
+          <button type="submit" class="touch-btn px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition">
+            <i class="fa-solid fa-paper-plane text-xs"></i> 칠판에 보내기
+          </button>
+        </div>
+      </form>
+
+      <div id="studentSuggestSuccess" class="hidden mt-3 p-3 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 rounded-xl text-center text-xs font-bold text-amber-800 dark:text-amber-200">
+        <i class="fa-solid fa-check mr-1"></i> 건의가 칠판으로 전송되었습니다!
+      </div>
+    </section>
+  </div>
+
+
+  <!-- =================================================================== -->
+  <!-- 2. 스마트 칠판 메인 애플리케이션 (교실 칠판 전용 대시보드)          -->
+  <!-- =================================================================== -->
+  <div id="teacherAppContainer" class="flex-1 flex flex-col p-3.5 sm:p-5 max-w-7xl w-full mx-auto">
+    
+    <!-- 2-1. 상단 글로벌 헤더 바 -->
+    <header class="bg-white dark:bg-slate-800 rounded-2xl shadow-md border border-slate-200/90 dark:border-slate-700 p-3 sm:px-5 sm:py-3.5 flex flex-wrap items-center justify-between gap-3 mb-3.5">
+      <!-- 좌측: 학급 타이틀 -->
+      <div class="flex items-center gap-3">
+        <div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-xl shadow-md shadow-blue-500/20">
+          <i class="fa-solid fa-chalkboard-user"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 id="mainClassTitle" class="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">우리 반 교실 대시보드</h1>
+            <span class="px-2 py-0.5 rounded-md bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-xs font-extrabold">
+              단일 학급 모드
+            </span>
+          </div>
+          <p id="mainClassSubTitle" class="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">
+            터치 한 번으로 출결 관리, 발표 추첨, 모둠 편성, 실시간 투표를 진행하세요.
+          </p>
+        </div>
+      </div>
+
+      <!-- 우측 컨트롤 버튼 그룹 (최소 52px 높이급 터치 영역 지원) -->
+      <div class="flex items-center gap-2 ml-auto">
+        <!-- 학생 참여 QR 팝업 버튼 -->
+        <button onclick="openQrModal()" class="touch-btn h-12 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm flex items-center gap-2 shadow-sm transition" title="학생 스마트폰 연동 QR코드 표시">
+          <i class="fa-solid fa-qrcode text-base"></i>
+          <span>학생 참여 QR</span>
+        </button>
+
+        <!-- 다크/라이트 모드 토글 -->
+        <button onclick="toggleDarkMode()" class="touch-btn w-12 h-12 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 flex items-center justify-center text-lg transition" title="다크/라이트 모드 전환">
+          <i id="themeIcon" class="fa-solid fa-moon"></i>
+        </button>
+
+        <!-- 설정 모달 버튼 -->
+        <button onclick="openSettingsModal()" class="touch-btn w-12 h-12 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 flex items-center justify-center text-lg transition" title="총 학생 수 및 설정">
+          <i class="fa-solid fa-gear"></i>
+        </button>
+
+        <!-- 전체화면 토글 (F11) -->
+        <button onclick="toggleFullScreen()" class="touch-btn w-12 h-12 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 hidden sm:flex items-center justify-center text-lg transition" title="전체화면 (F11)">
+          <i id="fullscreenIcon" class="fa-solid fa-expand"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- 2-2. 상시 출결 / 번호 필터 바 (Sticky Header) -->
+    <section class="bg-white dark:bg-slate-800 rounded-2xl shadow-md border border-slate-200/90 dark:border-slate-700 p-3.5 mb-3.5">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-2.5 pb-2 border-b border-slate-100 dark:border-slate-700/60">
+        <div class="flex items-center gap-2">
+          <span class="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 flex items-center justify-center text-xs font-bold">
+            <i class="fa-solid fa-user-check"></i>
+          </span>
+          <span class="text-sm font-bold text-slate-900 dark:text-white">상시 출결 체크 바</span>
+          <span class="text-xs text-slate-400 dark:text-slate-500">(터치 시 결석 처리되어 추첨/모둠에서 자동 제외)</span>
+        </div>
+
+        <!-- 실시간 출석 카운터 & 전체 출석 토글 -->
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-100 dark:bg-slate-700/60 text-xs font-bold">
+            <span class="text-slate-500 dark:text-slate-400">출석 인원:</span>
+            <span id="presentCountText" class="text-blue-600 dark:text-blue-400 text-sm font-black">25</span>
+            <span class="text-slate-400">/</span>
+            <span id="totalCountText" class="text-slate-700 dark:text-slate-300">25명</span>
+            <span id="attendanceRateText" class="ml-1 text-[11px] px-1.5 py-0.2 rounded bg-blue-50 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">100%</span>
+          </div>
+
+          <button onclick="resetAllAttendance()" class="touch-btn text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 transition">
+            전원 출석
+          </button>
+        </div>
+      </div>
+
+      <!-- 1번부터 N번까지의 번호 칩 그리드 (최소 52px x 52px 보장) -->
+      <div id="studentChipsGrid" class="flex flex-wrap gap-2 items-center max-h-40 overflow-y-auto pr-1">
+        <!-- JS 렌더링 -->
+      </div>
+    </section>
+
+    <!-- 2-3. 하단 메인 탭 내비게이션 -->
+    <div class="flex items-center gap-2 mb-3 bg-slate-200/80 dark:bg-slate-800/80 p-1.5 rounded-2xl w-fit">
+      <button onclick="switchMainTab('activity')" id="tabBtnActivity" class="touch-btn h-12 px-6 rounded-xl font-black text-sm flex items-center gap-2 transition bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm">
+        <i class="fa-solid fa-dice text-base"></i>
+        <span>[탭 1] 발표 번호 추첨 & 모둠 편성</span>
+      </button>
+
+      <button onclick="switchMainTab('vote')" id="tabBtnVote" class="touch-btn h-12 px-6 rounded-xl font-bold text-sm flex items-center gap-2 transition text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
+        <i class="fa-solid fa-square-poll-vertical text-base"></i>
+        <span>[탭 2] 실시간 투표 & 익명 건의함</span>
+        <span id="newSuggestBadge" class="hidden w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+      </button>
+    </div>
+
+    <!-- 2-4. [탭 1 화면] 발표 번호 추첨 & 모둠 편성 -->
+    <main id="tabContentActivity" class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3.5 min-h-0">
+      
+      <!-- [좌측: lg:col-span-5] 발표 번호 추첨기 -->
+      <section class="lg:col-span-5 bg-white dark:bg-slate-800 rounded-2xl shadow-md border border-slate-200/90 dark:border-slate-700 p-4 sm:p-5 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-100 dark:border-slate-700">
+            <div class="flex items-center gap-2">
+              <span class="w-8 h-8 rounded-xl bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-300 flex items-center justify-center text-sm font-black">
+                <i class="fa-solid fa-dice-five"></i>
+              </span>
+              <h2 class="text-lg font-bold text-slate-900 dark:text-white">발표 번호 추첨기</h2>
+            </div>
+            
+            <!-- 옵션: 중복 제외 (비복원 추출) 토글 -->
+            <label class="flex items-center gap-2 cursor-pointer touch-btn">
+              <input type="checkbox" id="toggleExcludeDrawn" checked onchange="saveLotterySettings()" class="w-5 h-5 accent-rose-600 rounded">
+              <span class="text-xs font-bold text-slate-700 dark:text-slate-300">중복 제외 (비복원)</span>
+            </label>
+          </div>
+
+          <!-- 전광판 스타일의 대형 번호 디스플레이 영역 -->
+          <div class="my-4 p-6 sm:p-8 rounded-2xl bg-gradient-to-b from-slate-900 to-slate-950 text-white flex flex-col items-center justify-center border border-slate-700 shadow-inner relative overflow-hidden min-h-[200px]">
+            <span class="text-xs font-mono font-bold tracking-widest text-slate-400 uppercase mb-2">LUCKY NUMBER</span>
+            
+            <!-- 롤링 숫자 -->
+            <div id="lotteryRollingDisplay" class="text-7xl sm:text-8xl font-black font-mono tracking-tighter text-blue-400 digital-roll transition-transform">
+              --
+            </div>
+
+            <div id="lotteryStatusText" class="mt-2 text-xs font-semibold text-slate-400">
+              [추첨 시작] 버튼을 터치하세요
+            </div>
+          </div>
+
+          <!-- 추첨 버튼 (최소 56px 높이의 웅장한 터치 버튼) -->
+          <div class="flex items-center gap-2.5">
+            <button id="btnStartLottery" onclick="startLotteryDraw()" class="touch-btn flex-1 h-14 bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white font-black text-lg rounded-2xl shadow-lg shadow-rose-500/25 flex items-center justify-center gap-2 transition">
+              <i class="fa-solid fa-play"></i>
+              <span>추첨 시작</span>
+            </button>
+            
+            <button onclick="resetLotteryHistory()" class="touch-btn h-14 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-2xl font-bold text-xs flex flex-col items-center justify-center gap-0.5 transition" title="당첨 이력 리셋">
+              <i class="fa-solid fa-rotate-left text-sm"></i>
+              <span>기록 리셋</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 당첨된 번호 목록 누적 표시 -->
+        <div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700/80">
+          <div class="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400 mb-2">
+            <span>당첨된 번호 목록 (<span id="drawnCountText">0</span>명)</span>
+            <span class="text-[11px] text-slate-400 font-normal">비복원 추첨 시 다음 대상에서 제외됨</span>
+          </div>
+          <div id="drawnNumbersContainer" class="flex flex-wrap gap-1.5 min-h-[44px] max-h-24 overflow-y-auto p-1.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200/80 dark:border-slate-700/60 items-center">
+            <span class="text-xs text-slate-400 px-2">아직 당첨된 번호가 없습니다.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- [우측: lg:col-span-7] 자동 모둠 편성기 -->
+      <section class="lg:col-span-7 bg-white dark:bg-slate-800 rounded-2xl shadow-md border border-slate-200/90 dark:border-slate-700 p-4 sm:p-5 flex flex-col min-h-0">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-3 pb-2 border-b border-slate-100 dark:border-slate-700 shrink-0">
+          <div class="flex items-center gap-2">
+            <span class="w-8 h-8 rounded-xl bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-300 flex items-center justify-center text-sm font-black">
+              <i class="fa-solid fa-users-viewfinder"></i>
+            </span>
+            <div>
+              <h2 class="text-lg font-bold text-slate-900 dark:text-white">자동 모둠 편성기</h2>
+              <span class="text-xs text-slate-400">결석 번호를 제외하고 무작위 균등 배분 (터치로 번호 맞교환 가능)</span>
+            </div>
+          </div>
+
+          <!-- 편성 옵션 컨트롤러 -->
+          <div class="flex items-center gap-2">
+            <select id="groupModeSelect" onchange="updateGroupOptionUI()" class="h-11 px-3 bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white rounded-xl text-xs font-bold border-none outline-none">
+              <option value="bySize">모둠당 인원 수</option>
+              <option value="byCount">총 모둠 수</option>
+            </select>
+
+            <select id="groupValueSelect" class="h-11 px-3 bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white rounded-xl text-xs font-bold border-none outline-none">
+              <!-- JS 생성 (기본 4명씩 또는 6모둠 등) -->
+            </select>
+
+            <button onclick="generateGroups()" class="touch-btn h-11 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm transition">
+              <i class="fa-solid fa-wand-magic-sparkles text-xs"></i>
+              <span>모둠 편성</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 모둠 편성 결과 타일 카드 렌더링 영역 (칠판 터치 교환 안내 포함) -->
+        <div id="groupsDisplayGrid" class="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 overflow-y-auto pr-1 min-h-[350px]">
+          <div class="col-span-full flex flex-col items-center justify-center p-12 text-slate-400 dark:text-slate-500">
+            <i class="fa-solid fa-users text-4xl mb-3 opacity-40"></i>
+            <p class="text-sm font-semibold">[모둠 편성] 버튼을 터치하면 무작위로 팀이 배정됩니다.</p>
+          </div>
+        </div>
+
+        <div class="mt-3 pt-2 border-t border-slate-100 dark:border-slate-700/80 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 shrink-0">
+          <span><i class="fa-solid fa-hand-pointer mr-1 text-indigo-500"></i>칠판에서 임의의 두 번호를 순서대로 터치하면 자리를 맞교환할 수 있습니다.</span>
+          <button onclick="clearGroups()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">초기화</button>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- 2-5. [탭 2 화면] 실시간 투표 & 익명 건의함 -->
+    <main id="tabContentVote" class="hidden flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3.5 min-h-0">
+      
+      <!-- [좌측: lg:col-span-6] 실시간 투표 진행 및 집계 보드 -->
+      <section class="lg:col-span-6 bg-white dark:bg-slate-800 rounded-2xl shadow-md border border-slate-200/90 dark:border-slate-700 p-4 sm:p-5 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-100 dark:border-slate-700">
+            <div class="flex items-center gap-2">
+              <span class="w-8 h-8 rounded-xl bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-300 flex items-center justify-center text-sm font-black">
+                <i class="fa-solid fa-chart-column"></i>
+              </span>
+              <h2 class="text-lg font-bold text-slate-900 dark:text-white">실시간 투표 현황</h2>
+            </div>
+            
+            <button onclick="openNewVoteModal()" class="touch-btn h-10 px-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1">
+              <i class="fa-solid fa-plus text-xs"></i> 새 투표 시작
+            </button>
+          </div>
+
+          <!-- 현재 진행 중인 안건 -->
+          <div class="p-4 rounded-2xl bg-blue-50/70 dark:bg-slate-700/50 border border-blue-100 dark:border-slate-600 mb-4">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-[11px] font-bold text-blue-600 dark:text-blue-300">현재 안건</span>
+              <span id="voteTotalParticipants" class="text-xs font-extrabold text-blue-700 dark:text-blue-200">참여: 0명</span>
+            </div>
+            <h3 id="boardVoteQuestion" class="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-snug">
+              오늘의 수업 주제에 대해 찬성하십니까?
+            </h3>
+          </div>
+
+          <!-- 실시간 애니메이션 막대 그래프 렌더링 -->
+          <div id="voteResultsContainer" class="space-y-3.5 my-2">
+            <!-- JS 렌더링 -->
+          </div>
+        </div>
+
+        <div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700/80 flex items-center justify-between text-xs text-slate-400">
+          <span>학생들이 스마트폰에서 투표 시 막대 그래프가 즉시 반영됩니다.</span>
+          <button onclick="resetCurrentVotes()" class="text-rose-500 hover:text-rose-600 font-bold">결과 리셋</button>
+        </div>
+      </section>
+
+      <!-- [우측: lg:col-span-6] 포스트잇 스타일 익명 건의함 보드 -->
+      <section class="lg:col-span-6 bg-white dark:bg-slate-800 rounded-2xl shadow-md border border-slate-200/90 dark:border-slate-700 p-4 sm:p-5 flex flex-col min-h-0">
+        <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-100 dark:border-slate-700 shrink-0">
+          <div class="flex items-center gap-2">
+            <span class="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-300 flex items-center justify-center text-sm font-black">
+              <i class="fa-solid fa-note-sticky"></i>
+            </span>
+            <div>
+              <h2 class="text-lg font-bold text-slate-900 dark:text-white">실시간 익명 건의함</h2>
+              <span class="text-xs text-slate-400">학생 스마트폰에서 보낸 메시지가 포스트잇으로 도착합니다 (터치 시 확인/숨김)</span>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-1.5">
+            <button onclick="clearAllSuggestions()" class="touch-btn h-9 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-bold transition">
+              모두 비우기
+            </button>
+          </div>
+        </div>
+
+        <!-- 포스트잇 카드 그리드 -->
+        <div id="suggestionsBoardGrid" class="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 overflow-y-auto pr-1 min-h-[350px]">
+          <!-- JS 렌더링 -->
+        </div>
+
+        <div class="mt-3 pt-2 border-t border-slate-100 dark:border-slate-700/80 flex items-center justify-between text-xs text-slate-400 shrink-0">
+          <span id="suggestionCountStatus">수신된 메시지: 0건</span>
+          <span>포스트잇 카드를 터치하면 '확인 완료' 처리되어 숨겨집니다.</span>
+        </div>
+      </section>
+
+    </main>
+
+  </div>
+
+
+  <!-- =================================================================== -->
+  <!-- 3. 모달 대화상자 (QR코드, 당첨 대형팝업, 환경설정, 투표개설)          -->
+  <!-- =================================================================== -->
+
+  <!-- 3-1. 학생 참여용 대형 QR 코드 모달 -->
+  <div id="qrModal" class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 max-w-md w-full p-6 sm:p-8 flex flex-col items-center text-center">
+      <div class="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-2xl mb-3 shadow-inner">
+        <i class="fa-solid fa-qrcode"></i>
+      </div>
+      <h3 class="text-xl sm:text-2xl font-black text-slate-900 dark:text-white mb-1">학생 스마트폰 참여 QR</h3>
+      <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mb-6">스마트폰 카메라로 스캔하면 즉시 투표와 건의함에 참여할 수 있습니다.</p>
+
+      <!-- QR 코드 생성 영역 -->
+      <div id="qrcodeBox" class="p-4 bg-white rounded-2xl shadow-md border border-slate-200 mb-4 flex items-center justify-center"></div>
+
+      <!-- 접속 링크 텍스트 -->
+      <p id="qrUrlText" class="text-xs font-mono text-slate-500 dark:text-slate-400 break-all px-3 py-1.5 bg-slate-50 dark:bg-slate-900 rounded-lg w-full mb-6">
+        https://...
+      </p>
+
+      <div class="flex items-center gap-3 w-full">
+        <button onclick="copyStudentUrl()" class="touch-btn flex-1 h-12 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-sm transition">
+          <i class="fa-solid fa-copy mr-1"></i> 주소 복사
+        </button>
+        <button onclick="closeQrModal()" class="touch-btn flex-1 h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm transition shadow-sm">
+          닫기
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3-2. 발표 번호 당첨 대형 팝업 (100px+ 크기 강조) -->
+  <div id="lotteryWinnerModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md hidden items-center justify-center z-50 p-4">
+    <div class="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border-4 border-rose-500 max-w-lg w-full p-8 flex flex-col items-center text-center transform scale-95 transition-all">
+      <div class="text-amber-500 text-3xl mb-2 animate-bounce">
+        <i class="fa-solid fa-crown"></i>
+      </div>
+      <h4 class="text-sm font-black tracking-widest text-rose-600 dark:text-rose-400 uppercase">SELECTED STUDENT</h4>
+      
+      <!-- 100px 이상 크기의 당첨 번호 -->
+      <div id="lotteryWinnerNumberText" class="text-9xl font-black font-mono tracking-tight text-slate-900 dark:text-white my-4 text-center leading-none">
+        00
+      </div>
+
+      <p class="text-base font-bold text-slate-600 dark:text-slate-300 mb-6">
+        당첨을 축하합니다! 발표를 준비해 주세요.
+      </p>
+
+      <button onclick="closeLotteryWinnerModal()" class="touch-btn h-14 px-8 bg-rose-600 hover:bg-rose-700 text-white font-black text-lg rounded-2xl shadow-lg shadow-rose-500/30 transition w-full">
+        확인 완료
+      </button>
+    </div>
+  </div>
+
+  <!-- 3-3. 대시보드 환경설정 모달 (학생 총원 1회 입력 및 저장) -->
+  <div id="settingsModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 max-w-md w-full p-6 sm:p-7">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700 mb-4">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-sliders text-blue-600"></i>
+          <h3 class="text-lg font-bold text-slate-900 dark:text-white">학급 환경 설정</h3>
+        </div>
+        <button onclick="closeSettingsModal()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xl p-1">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <form onsubmit="saveDashboardSettings(event)" class="space-y-4">
+        <!-- 학급 명칭 -->
+        <div>
+          <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">학급 타이틀 명칭</label>
+          <input type="text" id="settingClassTitleInput" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-sm font-bold text-slate-900 dark:text-white" placeholder="예: 우리 반 교실 대시보드">
+        </div>
+
+        <!-- 학생 총원 (번호 1 ~ N번) -->
+        <div>
+          <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+            우리 반 총 학생 수 (총 번호 1번 ~ N번)
+          </label>
+          <div class="flex items-center gap-2">
+            <input type="number" id="settingStudentCountInput" min="1" max="60" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-sm font-mono font-bold text-slate-900 dark:text-white" placeholder="25">
+            <span class="text-sm font-bold text-slate-500 shrink-0">명</span>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-1">※ 학생 번호가 1번부터 설정한 수까지 즉시 자동 생성됩니다.</p>
+        </div>
+
+        <!-- 외부 실시간 연동 (선택 사항: GAS 또는 Firebase) -->
+        <div class="pt-2 border-t border-slate-100 dark:border-slate-700">
+          <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+            실시간 중계 웹 앱 API URL (선택)
+          </label>
+          <input type="url" id="settingRelayUrlInput" class="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-xs text-slate-900 dark:text-white font-mono" placeholder="https://script.google.com/macros/s/.../exec">
+          <p class="text-[10px] text-slate-400 mt-1">
+            미입력 시에도 같은 브라우저/기기간 BroadcastChannel 및 로컬 실시간 모의 기능으로 원활히 작동합니다.
+          </p>
+        </div>
+
+        <div class="flex items-center gap-2 pt-3 border-t border-slate-100 dark:border-slate-700">
+          <button type="button" onclick="resetAllAppStorage()" class="touch-btn py-2.5 px-4 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold transition">
+            전체 초기화
+          </button>
+          <button type="button" onclick="closeSettingsModal()" class="touch-btn flex-1 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition">
+            취소
+          </button>
+          <button type="submit" class="touch-btn flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm transition">
+            저장 및 적용
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 3-4. 새 투표 개설 모달 -->
+  <div id="newVoteModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 max-w-md w-full p-6 sm:p-7">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700 mb-4">
+        <h3 class="text-lg font-bold text-slate-900 dark:text-white">새 실시간 투표 안건 만들기</h3>
+        <button onclick="closeNewVoteModal()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xl p-1">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <form onsubmit="startNewVoteAgenda(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">투표 안건 질문</label>
+          <input type="text" id="voteQuestionInput" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-sm font-bold text-slate-900 dark:text-white" placeholder="예: 오늘 체육 시간에 피구를 할까요?">
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">투표 유형 선택</label>
+          <div class="grid grid-cols-2 gap-2 mb-2">
+            <button type="button" onclick="setVoteOptionPreset('ox')" class="touch-btn py-2 px-3 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 font-bold text-xs text-center">
+              찬반 투표 (찬성 / 반대)
+            </button>
+            <button type="button" onclick="setVoteOptionPreset('4choice')" class="touch-btn py-2 px-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 font-bold text-xs text-center">
+              4지선다 (1, 2, 3, 4번)
+            </button>
+          </div>
+
+          <div id="customVoteOptionsBox" class="space-y-1.5 mt-2">
+            <input type="text" class="vote-opt-input w-full px-3 py-1.5 rounded-lg border text-xs" value="찬성 👍">
+            <input type="text" class="vote-opt-input w-full px-3 py-1.5 rounded-lg border text-xs" value="반대 👎">
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 pt-2">
+          <button type="button" onclick="closeNewVoteModal()" class="touch-btn flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold">
+            취소
+          </button>
+          <button type="submit" class="touch-btn flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm">
+            투표 개설하기
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- =================================================================== -->
+  <!-- 4. 자바스크립트 전체 비즈니스 로직 및 Web Audio 엔진                 -->
+  <!-- =================================================================== -->
+  <script>
+    /* -------------------------------------------------------------
+     * 4-1. 전역 상태 및 로컬 스토리지 초기화
+     * ------------------------------------------------------------- */
+    const STORAGE_KEY_PREFIX = 'smartclass_';
+
+    // 기본 설정값 로드
+    let appConfig = {
+      title: localStorage.getItem(`${STORAGE_KEY_PREFIX}title`) || '우리 반 교실 대시보드',
+      studentCount: parseInt(localStorage.getItem(`${STORAGE_KEY_PREFIX}student_count`) || '25', 10),
+      relayUrl: localStorage.getItem(`${STORAGE_KEY_PREFIX}relay_url`) || '',
+      excludeDrawn: localStorage.getItem(`${STORAGE_KEY_PREFIX}exclude_drawn`) !== 'false', // 기본값 true
+      darkMode: localStorage.getItem(`${STORAGE_KEY_PREFIX}dark_mode`) === 'true'
+    };
+
+    // 결석 상태 Set (번호 목록)
+    let absentStudents = new Set(JSON.parse(localStorage.getItem(`${STORAGE_KEY_PREFIX}absent`) || '[]'));
+
+    // 당첨된 번호 목록 Array
+    let drawnNumbers = JSON.parse(localStorage.getItem(`${STORAGE_KEY_PREFIX}drawn`) || '[]');
+
+    // 모둠 데이터
+    let groupData = JSON.parse(localStorage.getItem(`${STORAGE_KEY_PREFIX}groups`) || '[]');
+    let selectedGroupStudent = null; // 맞교환용 첫 번째 선택 번호
+
+    // 실시간 투표 안건 데이터
+    let currentVote = JSON.parse(localStorage.getItem(`${STORAGE_KEY_PREFIX}vote`) || JSON.stringify({
+      id: 1,
+      question: '오늘의 수업 활동에 대해 찬성하십니까?',
+      options: ['찬성 👍', '반대 👎'],
+      votes: { 0: 0, 1: 0 }
+    }));
+
+    // 익명 건의함 목록
+    let suggestionsList = JSON.parse(localStorage.getItem(`${STORAGE_KEY_PREFIX}suggestions`) || '[]');
+
+    // URL 모드 분기 (학생 모바일 vs 칠판)
+    const urlParams = new URLSearchParams(window.location.search);
+    const isStudentMode = urlParams.get('mode') === 'student';
+
+    // BroadcastChannel (오프라인/로컬 스마트폰과 칠판 간 초고속 동기화)
+    let channel;
+    try {
+      channel = new BroadcastChannel('smart_board_channel');
+      channel.onmessage = (event) => {
+        handleIncomingBroadcast(event.data);
+      };
+    } catch (e) {
+      console.warn('BroadcastChannel 미지원 브라우저:', e);
+    }
+
+    /* -------------------------------------------------------------
+     * 4-2. Web Audio API 신디사이저 엔진 (외부 음원 파일 불필요)
+     * ------------------------------------------------------------- */
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = null;
+
+    function getAudioContext() {
+      if (!audioCtx) {
+        audioCtx = new AudioContext();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      return audioCtx;
+    }
+
+    // 롤링 비프음
+    function playBeepSound() {
+      try {
+        const ctx = getAudioContext();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(440 + Math.random() * 200, ctx.currentTime);
+        gain.gain.setValueAtTime(0.08, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.05);
+      } catch (err) {}
+    }
+
+    // 당첨 팡파르 화음
+    function playFanfareSound() {
+      try {
+        const ctx = getAudioContext();
+        const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+        notes.forEach((freq, i) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.08);
+          gain.gain.setValueAtTime(0.12, ctx.currentTime + i * 0.08);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.08 + 0.8);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(ctx.currentTime + i * 0.08);
+          osc.stop(ctx.currentTime + i * 0.08 + 0.8);
+        });
+      } catch (err) {}
+    }
+
+    /* -------------------------------------------------------------
+     * 4-3. 앱 초기화 (DOMContentLoaded)
+     * ------------------------------------------------------------- */
+    window.addEventListener('DOMContentLoaded', () => {
+      // 다크 모드 적용
+      if (appConfig.darkMode) {
+        document.documentElement.classList.add('dark');
+        document.getElementById('themeIcon').className = 'fa-solid fa-sun';
+      }
+
+      if (isStudentMode) {
+        // [학생 모바일 모드] 초기화
+        document.getElementById('teacherAppContainer').classList.add('hidden');
+        document.getElementById('studentAppContainer').classList.remove('hidden');
+        document.getElementById('studentAppContainer').classList.add('flex');
+        initStudentApp();
+      } else {
+        // [교실 스마트 칠판 모드] 초기화
+        document.getElementById('studentAppContainer').classList.add('hidden');
+        document.getElementById('teacherAppContainer').classList.remove('hidden');
+        initTeacherApp();
+      }
+    });
+
+    /* -------------------------------------------------------------
+     * 4-4. 스마트 칠판 모드 초기화 및 렌더링
+     * ------------------------------------------------------------- */
+    function initTeacherApp() {
+      document.getElementById('mainClassTitle').innerText = appConfig.title;
+      document.getElementById('toggleExcludeDrawn').checked = appConfig.excludeDrawn;
+
+      renderAttendanceChips();
+      renderDrawnHistory();
+      updateGroupOptionUI();
+      renderGroupsDisplay();
+      renderVoteResults();
+      renderSuggestionsBoard();
+    }
+
+    /* -------------------------------------------------------------
+     * 4-5. 출결 / 번호 필터 바 로직
+     * ------------------------------------------------------------- */
+    function renderAttendanceChips() {
+      const container = document.getElementById('studentChipsGrid');
+      container.innerHTML = '';
+
+      let presentCount = 0;
+      const total = appConfig.studentCount;
+
+      for (let num = 1; num <= total; num++) {
+        const isAbsent = absentStudents.has(num);
+        if (!isAbsent) presentCount++;
+
+        const chip = document.createElement('button');
+        chip.className = `student-chip touch-btn rounded-xl flex flex-col items-center justify-center p-1.5 font-bold transition shadow-xs ${
+          isAbsent
+            ? 'bg-slate-200 dark:bg-slate-700/80 text-slate-400 dark:text-slate-500 line-through border border-slate-300 dark:border-slate-600'
+            : 'bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+        }`;
+        
+        chip.onclick = () => toggleAttendance(num);
+        chip.innerHTML = `
+          <span class="text-base sm:text-lg font-black leading-none">${num}</span>
+          <span class="text-[9px] font-normal tracking-tighter mt-0.5">${isAbsent ? '결석' : '출석'}</span>
+        `;
+        container.appendChild(chip);
+      }
+
+      // 통계 업데이트
+      document.getElementById('presentCountText').innerText = presentCount;
+      document.getElementById('totalCountText').innerText = `${total}명`;
+      const rate = total > 0 ? Math.round((presentCount / total) * 100) : 0;
+      document.getElementById('attendanceRateText').innerText = `${rate}%`;
+    }
+
+    function toggleAttendance(num) {
+      if (absentStudents.has(num)) {
+        absentStudents.delete(num);
+      } else {
+        absentStudents.add(num);
+      }
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}absent`, JSON.stringify(Array.from(absentStudents)));
+      renderAttendanceChips();
+    }
+
+    function resetAllAttendance() {
+      absentStudents.clear();
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}absent`, JSON.stringify([]));
+      renderAttendanceChips();
+    }
+
+    // 현재 출석 중인 유효 번호 배열 반환 (결석 제외)
+    function getPresentStudentNumbers() {
+      const list = [];
+      for (let num = 1; num <= appConfig.studentCount; num++) {
+        if (!absentStudents.has(num)) {
+          list.push(num);
+        }
+      }
+      return list;
+    }
+
+    /* -------------------------------------------------------------
+     * 4-6. [기능 1] 발표 번호 추첨기 로직
+     * ------------------------------------------------------------- */
+    let isDrawing = false;
+
+    function saveLotterySettings() {
+      appConfig.excludeDrawn = document.getElementById('toggleExcludeDrawn').checked;
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}exclude_drawn`, appConfig.excludeDrawn);
+    }
+
+    function startLotteryDraw() {
+      if (isDrawing) return;
+
+      const presentList = getPresentStudentNumbers();
+      if (presentList.length === 0) {
+        alert('출석 상태인 학생 번호가 없습니다. 출결 바를 확인해주세요!');
+        return;
+      }
+
+      // 비복원 추출 시 이미 당첨된 번호 제외
+      let availablePool = presentList;
+      if (appConfig.excludeDrawn) {
+        availablePool = presentList.filter(n => !drawnNumbers.includes(n));
+      }
+
+      if (availablePool.length === 0) {
+        alert('모든 출석 인원이 이미 당첨되었습니다! [기록 리셋]을 누르거나 복원 추출을 활성화하세요.');
+        return;
+      }
+
+      isDrawing = true;
+      const display = document.getElementById('lotteryRollingDisplay');
+      const status = document.getElementById('lotteryStatusText');
+      const btn = document.getElementById('btnStartLottery');
+
+      btn.disabled = true;
+      btn.classList.add('opacity-50');
+      status.innerText = '행운의 번호를 추첨하는 중입니다...';
+
+      // 디지털 전광판 롤링 연출
+      let rollCount = 0;
+      const maxRolls = 25;
+      const intervalTime = 60; // 60ms 간격
+
+      const rollTimer = setInterval(() => {
+        rollCount++;
+        const randomTempNum = availablePool[Math.floor(Math.random() * availablePool.length)];
+        display.innerText = String(randomTempNum).padStart(2, '0');
+        playBeepSound();
+
+        if (rollCount >= maxRolls) {
+          clearInterval(rollTimer);
+          
+          // 최종 당첨자 결정
+          const finalWinner = availablePool[Math.floor(Math.random() * availablePool.length)];
+          display.innerText = String(finalWinner).padStart(2, '0');
+          status.innerText = `축하합니다! ${finalWinner}번 학생 당첨!`;
+          btn.disabled = false;
+          btn.classList.remove('opacity-50');
+          isDrawing = false;
+
+          // 기록 추가
+          if (appConfig.excludeDrawn) {
+            drawnNumbers.push(finalWinner);
+          } else {
+            drawnNumbers.unshift(finalWinner);
+          }
+          localStorage.setItem(`${STORAGE_KEY_PREFIX}drawn`, JSON.stringify(drawnNumbers));
+          renderDrawnHistory();
+
+          // 대형 팝업 표시 & 팡파르 & 축하 컨페티 폭죽
+          openWinnerModal(finalWinner);
+        }
+      }, intervalTime);
+    }
+
+    function renderDrawnHistory() {
+      const container = document.getElementById('drawnNumbersContainer');
+      document.getElementById('drawnCountText').innerText = drawnNumbers.length;
+      container.innerHTML = '';
+
+      if (drawnNumbers.length === 0) {
+        container.innerHTML = '<span class="text-xs text-slate-400 px-2">아직 당첨된 번호가 없습니다.</span>';
+        return;
+      }
+
+      drawnNumbers.forEach((num, index) => {
+        const badge = document.createElement('span');
+        badge.className = 'px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-200 text-xs font-black flex items-center gap-1 shadow-2xs';
+        badge.innerHTML = `<span>#${index + 1}</span> <span>${num}번</span>`;
+        container.appendChild(badge);
+      });
+    }
+
+    function resetLotteryHistory() {
+      if (confirm('당첨 번호 이력을 모두 초기화하시겠습니까?')) {
+        drawnNumbers = [];
+        localStorage.setItem(`${STORAGE_KEY_PREFIX}drawn`, JSON.stringify([]));
+        document.getElementById('lotteryRollingDisplay').innerText = '--';
+        document.getElementById('lotteryStatusText').innerText = '[추첨 시작] 버튼을 터치하세요';
+        renderDrawnHistory();
+      }
+    }
+
+    function openWinnerModal(winnerNum) {
+      document.getElementById('lotteryWinnerNumberText').innerText = winnerNum;
+      const modal = document.getElementById('lotteryWinnerModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+
+      playFanfareSound();
+
+      // 폭죽 효과 (Canvas Confetti)
+      if (typeof confetti === 'function') {
+        confetti({
+          particleCount: 100,
+          spread: 70,
+          origin: { y: 0.6 }
+        });
+      }
+    }
+
+    function closeLotteryWinnerModal() {
+      const modal = document.getElementById('lotteryWinnerModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    /* -------------------------------------------------------------
+     * 4-7. [기능 2] 자동 모둠 편성기 로직
+     * ------------------------------------------------------------- */
+    function updateGroupOptionUI() {
+      const mode = document.getElementById('groupModeSelect').value;
+      const valSelect = document.getElementById('groupValueSelect');
+      valSelect.innerHTML = '';
+
+      if (mode === 'bySize') {
+        // 모둠당 인원 수 (2명 ~ 8명)
+        [2, 3, 4, 5, 6, 7, 8].forEach(size => {
+          const opt = document.createElement('option');
+          opt.value = size;
+          opt.innerText = `${size}명씩 편성`;
+          if (size === 4) opt.selected = true;
+          valSelect.appendChild(opt);
+        });
+      } else {
+        // 총 모둠 수 (2모둠 ~ 10모둠)
+        [2, 3, 4, 5, 6, 7, 8, 9, 10].forEach(count => {
+          const opt = document.createElement('option');
+          opt.value = count;
+          opt.innerText = `${count}개 모둠으로 편성`;
+          if (count === 6) opt.selected = true;
+          valSelect.appendChild(opt);
+        });
+      }
+    }
+
+    function generateGroups() {
+      const pool = getPresentStudentNumbers();
+      if (pool.length === 0) {
+        alert('출석 상태인 학생이 없습니다. 출결 바를 확인해주세요!');
+        return;
+      }
+
+      // 무작위 셔플 (Fisher-Yates)
+      const shuffled = [...pool];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+
+      const mode = document.getElementById('groupModeSelect').value;
+      const val = parseInt(document.getElementById('groupValueSelect').value, 10);
+
+      groupData = [];
+      let numGroups = 1;
+
+      if (mode === 'bySize') {
+        numGroups = Math.max(1, Math.ceil(shuffled.length / val));
+      } else {
+        numGroups = Math.min(val, shuffled.length);
+      }
+
+      for (let g = 0; g < numGroups; g++) {
+        groupData.push({
+          id: g + 1,
+          name: `${g + 1}모둠`,
+          members: []
+        });
+      }
+
+      // 균등 분배
+      shuffled.forEach((studentNum, index) => {
+        const targetGroupIndex = index % numGroups;
+        groupData[targetGroupIndex].members.push(studentNum);
+      });
+
+      selectedGroupStudent = null;
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}groups`, JSON.stringify(groupData));
+      renderGroupsDisplay();
+    }
+
+    function renderGroupsDisplay() {
+      const container = document.getElementById('groupsDisplayGrid');
+      container.innerHTML = '';
+
+      if (groupData.length === 0) {
+        container.innerHTML = `
+          <div class="col-span-full flex flex-col items-center justify-center p-12 text-slate-400 dark:text-slate-500">
+            <i class="fa-solid fa-users text-4xl mb-3 opacity-40"></i>
+            <p class="text-sm font-semibold">[모둠 편성] 버튼을 터치하면 무작위로 팀이 배정됩니다.</p>
+          </div>
+        `;
+        return;
+      }
+
+      const colorPalette = [
+        'border-blue-300 dark:border-blue-800 bg-blue-50/50 dark:bg-slate-700/40 text-blue-700 dark:text-blue-300',
+        'border-emerald-300 dark:border-emerald-800 bg-emerald-50/50 dark:bg-slate-700/40 text-emerald-700 dark:text-emerald-300',
+        'border-amber-300 dark:border-amber-800 bg-amber-50/50 dark:bg-slate-700/40 text-amber-700 dark:text-amber-300',
+        'border-purple-300 dark:border-purple-800 bg-purple-50/50 dark:bg-slate-700/40 text-purple-700 dark:text-purple-300',
+        'border-rose-300 dark:border-rose-800 bg-rose-50/50 dark:bg-slate-700/40 text-rose-700 dark:text-rose-300',
+        'border-teal-300 dark:border-teal-800 bg-teal-50/50 dark:bg-slate-700/40 text-teal-700 dark:text-teal-300'
+      ];
+
+      groupData.forEach((group, gIdx) => {
+        const color = colorPalette[gIdx % colorPalette.length];
+        const card = document.createElement('div');
+        card.className = `p-3.5 rounded-2xl border ${color} flex flex-col justify-between shadow-2xs`;
+
+        let membersHtml = '';
+        group.members.forEach((mNum) => {
+          const isSelected = selectedGroupStudent && selectedGroupStudent.groupIndex === gIdx && selectedGroupStudent.num === mNum;
+          membersHtml += `
+            <button onclick="handleGroupMemberTouch(${gIdx}, ${mNum})" class="touch-btn px-3 py-2 rounded-xl text-sm font-black transition shadow-xs ${
+              isSelected 
+                ? 'bg-amber-400 text-slate-950 scale-105 ring-2 ring-amber-500' 
+                : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-100'
+            }">
+              ${mNum}번
+            </button>
+          `;
+        });
+
+        card.innerHTML = `
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-extrabold text-sm">${group.name}</span>
+            <span class="text-[11px] font-bold opacity-75">${group.members.length}명</span>
+          </div>
+          <div class="flex flex-wrap gap-1.5 my-1">
+            ${membersHtml || '<span class="text-xs text-slate-400">인원 없음</span>'}
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    // 칠판 터치로 번호 맞교환 (Click-Click Swap)
+    function handleGroupMemberTouch(groupIndex, studentNum) {
+      if (!selectedGroupStudent) {
+        selectedGroupStudent = { groupIndex, num: studentNum };
+        renderGroupsDisplay();
+      } else {
+        if (selectedGroupStudent.groupIndex === groupIndex && selectedGroupStudent.num === studentNum) {
+          // 같은 번호 터치 시 선택 해제
+          selectedGroupStudent = null;
+          renderGroupsDisplay();
+          return;
+        }
+
+        // 맞교환 실행
+        const firstGroup = groupData[selectedGroupStudent.groupIndex];
+        const secondGroup = groupData[groupIndex];
+
+        const idx1 = firstGroup.members.indexOf(selectedGroupStudent.num);
+        const idx2 = secondGroup.members.indexOf(studentNum);
+
+        if (idx1 !== -1 && idx2 !== -1) {
+          firstGroup.members[idx1] = studentNum;
+          secondGroup.members[idx2] = selectedGroupStudent.num;
+        }
+
+        selectedGroupStudent = null;
+        localStorage.setItem(`${STORAGE_KEY_PREFIX}groups`, JSON.stringify(groupData));
+        renderGroupsDisplay();
+      }
+    }
+
+    function clearGroups() {
+      if (confirm('모둠 편성 결과를 초기화하시겠습니까?')) {
+        groupData = [];
+        selectedGroupStudent = null;
+        localStorage.setItem(`${STORAGE_KEY_PREFIX}groups`, JSON.stringify([]));
+        renderGroupsDisplay();
+      }
+    }
+
+    /* -------------------------------------------------------------
+     * 4-8. [기능 3] 실시간 투표 보드 (칠판 화면)
+     * ------------------------------------------------------------- */
+    function renderVoteResults() {
+      document.getElementById('boardVoteQuestion').innerText = currentVote.question;
+      const container = document.getElementById('voteResultsContainer');
+      container.innerHTML = '';
+
+      let totalVotes = 0;
+      Object.values(currentVote.votes).forEach(count => totalVotes += count);
+      document.getElementById('voteTotalParticipants').innerText = `참여: ${totalVotes}명`;
+
+      currentVote.options.forEach((optText, optIdx) => {
+        const count = currentVote.votes[optIdx] || 0;
+        const percentage = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
+
+        const row = document.createElement('div');
+        row.className = 'space-y-1';
+        row.innerHTML = `
+          <div class="flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-200">
+            <span class="flex items-center gap-1.5">
+              <span class="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 flex items-center justify-center text-[10px] font-black">${optIdx + 1}</span>
+              <span>${optText}</span>
+            </span>
+            <span class="font-mono">${count}표 (${percentage}%)</span>
+          </div>
+          <div class="w-full h-4 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden p-0.5">
+            <div class="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all duration-500 ease-out" style="width: ${percentage}%"></div>
+          </div>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    function openNewVoteModal() {
+      document.getElementById('voteQuestionInput').value = '';
+      setVoteOptionPreset('ox');
+      const modal = document.getElementById('newVoteModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeNewVoteModal() {
+      const modal = document.getElementById('newVoteModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function setVoteOptionPreset(type) {
+      const box = document.getElementById('customVoteOptionsBox');
+      if (type === 'ox') {
+        box.innerHTML = `
+          <input type="text" class="vote-opt-input w-full px-3 py-1.5 rounded-lg border text-xs" value="찬성 👍">
+          <input type="text" class="vote-opt-input w-full px-3 py-1.5 rounded-lg border text-xs" value="반대 👎">
+        `;
+      } else {
+        box.innerHTML = `
+          <input type="text" class="vote-opt-input w-full px-3 py-1.5 rounded-lg border text-xs" value="1번 선택지">
+          <input type="text" class="vote-opt-input w-full px-3 py-1.5 rounded-lg border text-xs" value="2번 선택지">
+          <input type="text" class="vote-opt-input w-full px-3 py-1.5 rounded-lg border text-xs" value="3번 선택지">
+          <input type="text" class="vote-opt-input w-full px-3 py-1.5 rounded-lg border text-xs" value="4번 선택지">
+        `;
+      }
+    }
+
+    function startNewVoteAgenda(e) {
+      e.preventDefault();
+      const question = document.getElementById('voteQuestionInput').value.trim();
+      const inputs = document.querySelectorAll('.vote-opt-input');
+      const options = Array.from(inputs).map(inp => inp.value.trim()).filter(Boolean);
+
+      if (!question || options.length < 2) {
+        alert('질문과 최소 2개 이상의 선택지를 입력해주세요.');
+        return;
+      }
+
+      currentVote = {
+        id: Date.now(),
+        question: question,
+        options: options,
+        votes: {}
+      };
+      options.forEach((_, idx) => currentVote.votes[idx] = 0);
+
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}vote`, JSON.stringify(currentVote));
+      renderVoteResults();
+      closeNewVoteModal();
+
+      // 브로드캐스트로 학생 모바일에 새 투표 알림
+      broadcastMessage({ type: 'NEW_VOTE', payload: currentVote });
+    }
+
+    function resetCurrentVotes() {
+      if (confirm('현재 투표 결과를 0표로 리셋하시겠습니까?')) {
+        currentVote.options.forEach((_, idx) => currentVote.votes[idx] = 0);
+        localStorage.setItem(`${STORAGE_KEY_PREFIX}vote`, JSON.stringify(currentVote));
+        renderVoteResults();
+        broadcastMessage({ type: 'NEW_VOTE', payload: currentVote });
+      }
+    }
+
+    /* -------------------------------------------------------------
+     * 4-9. [기능 3] 익명 건의함 보드 (칠판 화면)
+     * ------------------------------------------------------------- */
+    function renderSuggestionsBoard() {
+      const container = document.getElementById('suggestionsBoardGrid');
+      container.innerHTML = '';
+
+      const activeList = suggestionsList.filter(s => !s.isArchived);
+      document.getElementById('suggestionCountStatus').innerText = `수신된 메시지: ${activeList.length}건`;
+
+      if (activeList.length === 0) {
+        container.innerHTML = `
+          <div class="col-span-full flex flex-col items-center justify-center p-12 text-slate-400 dark:text-slate-500">
+            <i class="fa-solid fa-envelope text-4xl mb-3 opacity-40"></i>
+            <p class="text-sm font-semibold">아직 도착한 익명 건의사항이 없습니다.</p>
+          </div>
+        `;
+        return;
+      }
+
+      const postitColors = [
+        'bg-amber-100 text-amber-900 border-amber-200',
+        'bg-emerald-100 text-emerald-900 border-emerald-200',
+        'bg-pink-100 text-pink-900 border-pink-200',
+        'bg-sky-100 text-sky-900 border-sky-200',
+        'bg-purple-100 text-purple-900 border-purple-200'
+      ];
+
+      activeList.forEach((item, idx) => {
+        const color = postitColors[idx % postitColors.length];
+        const card = document.createElement('div');
+        card.className = `postit-card touch-btn p-3.5 rounded-2xl border ${color} cursor-pointer flex flex-col justify-between min-h-[110px] transform ${idx % 2 === 0 ? 'rotate-1' : '-rotate-1'}`;
+        card.onclick = () => archiveSuggestion(item.id);
+
+        card.innerHTML = `
+          <div class="flex items-start justify-between gap-1 mb-1">
+            <span class="text-[10px] font-mono font-bold opacity-60">익명 친구</span>
+            <span class="text-[10px] opacity-60">${item.time}</span>
+          </div>
+          <p class="text-sm font-bold leading-relaxed whitespace-pre-wrap break-words flex-1 my-1">
+            ${item.text}
+          </p>
+          <div class="flex items-center justify-end text-[10px] font-bold opacity-75 mt-1">
+            <span>터치 시 확인 완료 <i class="fa-solid fa-check ml-0.5"></i></span>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function archiveSuggestion(id) {
+      const target = suggestionsList.find(s => s.id === id);
+      if (target) {
+        target.isArchived = true;
+        localStorage.setItem(`${STORAGE_KEY_PREFIX}suggestions`, JSON.stringify(suggestionsList));
+        renderSuggestionsBoard();
+      }
+    }
+
+    function clearAllSuggestions() {
+      if (confirm('수신된 모든 건의사항을 비우시겠습니까?')) {
+        suggestionsList = [];
+        localStorage.setItem(`${STORAGE_KEY_PREFIX}suggestions`, JSON.stringify([]));
+        renderSuggestionsBoard();
+      }
+    }
+
+    /* -------------------------------------------------------------
+     * 4-10. [학생 모바일 화면] 로직 (?mode=student)
+     * ------------------------------------------------------------- */
+    function initStudentApp() {
+      document.getElementById('studentHeaderTitle').innerText = `${appConfig.title} - 학생용`;
+      
+      // 글자수 카운터
+      const textarea = document.getElementById('studentSuggestInput');
+      textarea.addEventListener('input', () => {
+        document.getElementById('suggestCharCount').innerText = `${textarea.value.length} / 100자`;
+      });
+
+      renderStudentVoteUI();
+    }
+
+    function renderStudentVoteUI() {
+      const questionEl = document.getElementById('studentVoteQuestion');
+      const optContainer = document.getElementById('studentVoteOptions');
+      const submittedMsg = document.getElementById('studentVoteSubmittedMsg');
+
+      questionEl.innerText = currentVote.question;
+      optContainer.innerHTML = '';
+      submittedMsg.classList.add('hidden');
+
+      currentVote.options.forEach((optText, optIdx) => {
+        const btn = document.createElement('button');
+        btn.className = 'touch-btn p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/50 hover:bg-blue-50 text-left font-bold text-sm text-slate-800 dark:text-slate-100 flex items-center justify-between transition';
+        btn.onclick = () => submitStudentVote(optIdx);
+        btn.innerHTML = `
+          <span>${optText}</span>
+          <i class="fa-solid fa-chevron-right text-xs text-slate-400"></i>
+        `;
+        optContainer.appendChild(btn);
+      });
+    }
+
+    function submitStudentVote(optIdx) {
+      if (currentVote.votes[optIdx] === undefined) {
+        currentVote.votes[optIdx] = 0;
+      }
+      currentVote.votes[optIdx]++;
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}vote`, JSON.stringify(currentVote));
+
+      document.getElementById('studentVoteOptions').innerHTML = '';
+      document.getElementById('studentVoteSubmittedMsg').classList.remove('hidden');
+
+      // 칠판으로 실시간 표 전송
+      broadcastMessage({ type: 'VOTE_CAST', payload: { optIdx } });
+    }
+
+    function submitStudentSuggestion(e) {
+      e.preventDefault();
+      const input = document.getElementById('studentSuggestInput');
+      const text = input.value.trim();
+      if (!text) return;
+
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+      const newSuggestion = {
+        id: Date.now(),
+        text: text,
+        time: timeStr,
+        isArchived: false
+      };
+
+      suggestionsList.unshift(newSuggestion);
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}suggestions`, JSON.stringify(suggestionsList));
+
+      input.value = '';
+      document.getElementById('suggestCharCount').innerText = '0 / 100자';
+      
+      const successMsg = document.getElementById('studentSuggestSuccess');
+      successMsg.classList.remove('hidden');
+      setTimeout(() => successMsg.classList.add('hidden'), 3000);
+
+      // 칠판으로 실시간 건의 전달
+      broadcastMessage({ type: 'NEW_SUGGESTION', payload: newSuggestion });
+    }
+
+    /* -------------------------------------------------------------
+     * 4-11. 실시간 중계 브로드캐스트 핸들러
+     * ------------------------------------------------------------- */
+    function broadcastMessage(data) {
+      if (channel) {
+        channel.postMessage(data);
+      }
+      // 외부 서버(GAS/Firebase) 연동 옵션이 지정된 경우
+      if (appConfig.relayUrl) {
+        try {
+          fetch(appConfig.relayUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+          }).catch(() => {});
+        } catch (e) {}
+      }
+    }
+
+    function handleIncomingBroadcast(msg) {
+      if (!msg) return;
+
+      if (!isStudentMode) {
+        // [칠판 화면]에서 학생들의 액션 수신
+        if (msg.type === 'VOTE_CAST') {
+          const optIdx = msg.payload.optIdx;
+          if (currentVote.votes[optIdx] === undefined) currentVote.votes[optIdx] = 0;
+          currentVote.votes[optIdx]++;
+          localStorage.setItem(`${STORAGE_KEY_PREFIX}vote`, JSON.stringify(currentVote));
+          renderVoteResults();
+        } else if (msg.type === 'NEW_SUGGESTION') {
+          // 중복 체크 후 추가
+          if (!suggestionsList.some(s => s.id === msg.payload.id)) {
+            suggestionsList.unshift(msg.payload);
+            localStorage.setItem(`${STORAGE_KEY_PREFIX}suggestions`, JSON.stringify(suggestionsList));
+            renderSuggestionsBoard();
+            
+            // 배지 알림
+            const badge = document.getElementById('newSuggestBadge');
+            if (badge) badge.classList.remove('hidden');
+          }
+        }
+      } else {
+        // [학생 화면]에서 교사의 액션 수신
+        if (msg.type === 'NEW_VOTE') {
+          currentVote = msg.payload;
+          renderStudentVoteUI();
+        }
+      }
+    }
+
+    /* -------------------------------------------------------------
+     * 4-12. 모달 및 유틸리티 함수들
+     * ------------------------------------------------------------- */
+    function switchMainTab(tab) {
+      const btnAct = document.getElementById('tabBtnActivity');
+      const btnVote = document.getElementById('tabBtnVote');
+      const contentAct = document.getElementById('tabContentActivity');
+      const contentVote = document.getElementById('tabContentVote');
+
+      if (tab === 'activity') {
+        btnAct.className = 'touch-btn h-12 px-6 rounded-xl font-black text-sm flex items-center gap-2 transition bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm';
+        btnVote.className = 'touch-btn h-12 px-6 rounded-xl font-bold text-sm flex items-center gap-2 transition text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white';
+        contentAct.classList.remove('hidden');
+        contentVote.classList.add('hidden');
+      } else {
+        btnVote.className = 'touch-btn h-12 px-6 rounded-xl font-black text-sm flex items-center gap-2 transition bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm';
+        btnAct.className = 'touch-btn h-12 px-6 rounded-xl font-bold text-sm flex items-center gap-2 transition text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white';
+        contentVote.classList.remove('hidden');
+        contentAct.classList.add('hidden');
+        
+        // 배지 해제
+        const badge = document.getElementById('newSuggestBadge');
+        if (badge) badge.classList.add('hidden');
+      }
+    }
+
+    let qrCodeInstance = null;
+
+    function openQrModal() {
+      const studentUrl = `${window.location.origin}${window.location.pathname}?mode=student`;
+      document.getElementById('qrUrlText').innerText = studentUrl;
+
+      const qrcodeBox = document.getElementById('qrcodeBox');
+      qrcodeBox.innerHTML = '';
+      qrCodeInstance = new QRCode(qrcodeBox, {
+        text: studentUrl,
+        width: 220,
+        height: 220,
+        colorDark: '#0f172a',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
+      });
+
+      const modal = document.getElementById('qrModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeQrModal() {
+      const modal = document.getElementById('qrModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function copyStudentUrl() {
+      const url = document.getElementById('qrUrlText').innerText;
+      navigator.clipboard.writeText(url).then(() => {
+        alert('학생 참여 URL이 클립보드에 복사되었습니다!');
+      }).catch(() => {
+        prompt('아래 URL을 복사해주세요:', url);
+      });
+    }
+
+    function toggleDarkMode() {
+      appConfig.darkMode = !appConfig.darkMode;
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}dark_mode`, appConfig.darkMode);
+
+      if (appConfig.darkMode) {
+        document.documentElement.classList.add('dark');
+        document.getElementById('themeIcon').className = 'fa-solid fa-sun';
+      } else {
+        document.documentElement.classList.remove('dark');
+        document.getElementById('themeIcon').className = 'fa-solid fa-moon';
+      }
+    }
+
+    function toggleFullScreen() {
+      const icon = document.getElementById('fullscreenIcon');
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+        icon.className = 'fa-solid fa-compress';
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+          icon.className = 'fa-solid fa-expand';
+        }
+      }
+    }
+
+    function openSettingsModal() {
+      document.getElementById('settingClassTitleInput').value = appConfig.title;
+      document.getElementById('settingStudentCountInput').value = appConfig.studentCount;
+      document.getElementById('settingRelayUrlInput').value = appConfig.relayUrl;
+
+      const modal = document.getElementById('settingsModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeSettingsModal() {
+      const modal = document.getElementById('settingsModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function saveDashboardSettings(e) {
+      e.preventDefault();
+      const title = document.getElementById('settingClassTitleInput').value.trim() || '우리 반 교실 대시보드';
+      const count = parseInt(document.getElementById('settingStudentCountInput').value, 10) || 25;
+      const relayUrl = document.getElementById('settingRelayUrlInput').value.trim();
+
+      appConfig.title = title;
+      appConfig.studentCount = Math.max(1, Math.min(60, count));
+      appConfig.relayUrl = relayUrl;
+
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}title`, title);
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}student_count`, appConfig.studentCount);
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}relay_url`, relayUrl);
+
+      document.getElementById('mainClassTitle').innerText = title;
+      renderAttendanceChips();
+      closeSettingsModal();
+      alert('학급 설정이 저장되었습니다!');
+    }
+
+    function resetAllAppStorage() {
+      if (confirm('모든 데이터(출결, 추첨 기록, 모둠, 투표, 건의함)를 초기화하시겠습니까?')) {
+        localStorage.clear();
+        window.location.search = '';
+      }
+    }
+  </script>
+</body>
+</html>
